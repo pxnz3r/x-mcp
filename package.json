@@ -40,10 +40,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SINdomX/x-mcp.git"
+    "url": "git+https://github.com/pxnz3r/x-mcp.git"
   },
-  "homepage": "https://github.com/SINdomX/x-mcp#readme",
+  "homepage": "https://github.com/pxnz3r/x-mcp#readme",
   "bugs": {
-    "url": "https://github.com/SINdomX/x-mcp/issues"
+    "url": "https://github.com/pxnz3r/x-mcp/issues"
   }
 }
