@@ -1,0 +1,49 @@
+{
+  "name": "x-bookmarks-mcp",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "MCP server and CLI for reading, organizing, and exporting your own X bookmarks with browser cookies. Local folders, tags, link previews, offline search, an HTML viewer, and cobalt media downloads.",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "bin": {
+    "xbm": "./src/cli.js"
+  },
+  "scripts": {
+    "mcp": "node src/mcp.js",
+    "doctor": "node src/cli.js doctor",
+    "whoami": "node src/cli.js whoami",
+    "list": "node src/cli.js list",
+    "sync": "node src/cli.js sync",
+    "search": "node src/cli.js search",
+    "folders": "node src/cli.js folders",
+    "tags": "node src/cli.js tags",
+    "view": "node src/cli.js view",
+    "export": "node src/cli.js export",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "links": "node src/cli.js links"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "x-client-transaction-id": "^0.3.2",
+    "zod": "^3.25.76"
+  },
+  "license": "MIT",
+  "keywords": [
+    "x",
+    "twitter",
+    "bookmarks",
+    "mcp",
+    "model-context-protocol",
+    "cli",
+    "bookmarks-manager"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SINdomX/x-mcp.git"
+  },
+  "homepage": "https://github.com/SINdomX/x-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/SINdomX/x-mcp/issues"
+  }
+}

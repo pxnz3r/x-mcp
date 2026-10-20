@@ -1,0 +1,29 @@
+# Secrets
+.env
+.env.*
+!.env.example
+auth.json
+credentials.json
+
+# Personal data: cache, exports, media, viewer, rate state
+data/
+bookmarks-*.md
+bookmarks-*.json
+*.export.md
+view.html
+
+# Logs and OS noise
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Deps and coverage
+node_modules/
+coverage/
