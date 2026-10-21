@@ -45,6 +45,7 @@ node src/cli.js tags [--json]
 - `list --folder` on a local folder reads the cache and includes subfolders. On an X folder it fetches live.
 - `sync --full` walks until it stops adding new posts; without it, sync stops at the first page with nothing new.
 - `search` requires the cache. Run `sync` first.
+- Every listed post prints a `local:` line with a `file://` link into `data/view.html#post=<id>`, which opens the viewer at that post.
 
 ## Local organization
 
@@ -83,7 +84,7 @@ Fetches the page behind each cached external link and stores its `og:image`, tit
 node src/cli.js view [--no-open] [--out FILE] [--json]
 ```
 
-Writes `data/view.html` by default and opens it in the default browser. Clicking media opens a lightbox in place; `Esc` or a click outside closes it. External links render as cards when `links` has run.
+Writes `data/view.html` by default and opens it in the default browser. Clicking media opens a lightbox in place; `Esc` or a click outside closes it. External links render as cards when `links` has run. `data/view.html#post=<id>` opens the viewer scrolled to one post and highlights it.
 
 ## Media and export
 

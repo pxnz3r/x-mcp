@@ -137,6 +137,7 @@ Every command accepts `--json`. Full reference: [docs/CLI.md](docs/CLI.md).
 - Click a photo or video to open it in place: no new tab, transparent backdrop, `Esc` or click outside closes
 - `/` focuses search, `Esc` clears it, Reset clears everything
 - Filters persist in the URL hash (`#folder=Design/Frontend&tags=gsap`), so a link restores the same view
+- Every post has a local URL: `file:///.../data/view.html#post=<id>` opens the viewer scrolled to that post. The same URL is returned as `localUrl` by `list`, `search`, and `get`
 
 Regenerate after a sync or after changing folders and tags. The viewer is read-only and makes no requests of its own beyond image CDNs; link previews are fetched once by `links` and stored in the cache.
 

@@ -33,6 +33,10 @@ Personal bookmark tool. Reads the user's own bookmarks through their logged-in x
 | Markdown or JSON | `bookmarks_export` |
 | Rate and write status | `safety_status` |
 
+## Local URLs
+
+`bookmarks_list`, `bookmarks_search`, and `bookmark_get` return `localUrl` per post: a `file://` link to the generated viewer that opens scrolled to that post. Offer it when the user wants to open a bookmark in their own viewer instead of on x.com.
+
 ## Standard workflow
 
 1. `bookmarks_sync` (incremental is fine) so the cache is fresh.

@@ -31,6 +31,7 @@ CLI (src/cli.js)          MCP server (src/mcp.js)
 | `src/actions.js` | Use-case layer shared by CLI and MCP: sync, list, search, folders, tags, media, export, doctor |
 | `src/cobalt.js` | cobalt client for video and GIF URLs, file download and filename sanitizing |
 | `src/linkpreview.js` | Fetches OG metadata for external links, caches it for 14 days |
+| `src/localurl.js` | Builds `file://` viewer URLs with a `#post=<id>` anchor |
 | `src/viewer.js` | Generates the standalone `data/view.html` viewer |
 | `src/mcp.js` | Registers the MCP tools and maps errors to text results |
 | `src/cli.js` | Command-line interface |
