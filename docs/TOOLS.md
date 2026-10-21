@@ -157,6 +157,10 @@ No arguments. Pings `COBALT_API_URL` and reports reachability.
 
 No arguments. Returns writes enabled, current cooldown, hourly budget, max writes per call, and spacing.
 
+## Local URLs
+
+`bookmarks_list`, `bookmarks_search`, and `bookmark_get` return a `localUrl` field for every post: a `file://` link to the generated viewer that opens scrolled to that post. Use it when the user wants to open a bookmark in their own viewer.
+
 ## Error handling
 
 Failures return `isError: true` with a message and a hint. Codes: `NETWORK`, `AUTH_FAILED`, `FOLDERS_UNAVAILABLE`, `GRAPHQL_ERROR`, plus HTTP `status` for `401`, `403`, `429`, and `404`.
