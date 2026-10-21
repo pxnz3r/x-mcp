@@ -2,9 +2,10 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { paths } from './config.js';
+import { localUrlFor } from './localurl.js';
 import { allItems, folderPath, loadStore, tagCounts } from './store.js';
 
-function buildData(store) {
+function buildData(store, viewerPath) {
   const folders = Object.values(store.folders)
     .map((folder) => ({
       id: folder.id,
@@ -17,6 +18,7 @@ function buildData(store) {
 
   const items = allItems(store).map((item) => ({
     id: item.id,
+    localUrl: localUrlFor(item.id, viewerPath),
     author: { username: item.author?.username ?? null, name: item.author?.name ?? null },
     text: item.text ?? '',
     createdAt: item.createdAt ?? null,
@@ -79,6 +81,9 @@ select{background:var(--panel);border:1px solid var(--line);color:var(--text);bo
 .toggle.on{color:#fff;border-color:var(--accent)}
 .meta{color:var(--muted);font-size:12px;margin:0 0 14px;display:flex;gap:12px;flex-wrap:wrap}
 .card{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.card.flash{outline:2px solid var(--accent)}
+.foot .local{color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.foot .local:hover{border-color:var(--accent);color:var(--text)}
 .head{display:flex;gap:10px;align-items:center;margin-bottom:8px}
 .av{width:32px;height:32px;border-radius:50%;background:var(--chip);display:grid;place-items:center;font-size:12px;color:var(--muted);text-transform:uppercase;flex:0 0 auto}
 .who{font-weight:600;font-size:14px}
@@ -116,7 +121,7 @@ select{background:var(--panel);border:1px solid var(--line);color:var(--text);bo
 const PAGE_JS = `
 (function(){
 var DATA = JSON.parse(document.getElementById('data').textContent);
-var state = { folder: null, tags: new Set(), q: '', media: false, sort: 'newest' };
+var state = { folder: null, tags: new Set(), q: '', media: false, sort: 'newest', post: null };
 var scopes = {};
 function scope(id){
   if (scopes[id]) return scopes[id];
@@ -145,6 +150,7 @@ function parseHash(){
     if (k === 'tags' && v) v.split(',').filter(Boolean).forEach(function(t){ state.tags.add(t); });
     if (k === 'media') state.media = true;
     if (k === 'sort') state.sort = v;
+    if (k === 'post') state.post = v;
   });
 }
 function writeHash(){
@@ -157,6 +163,7 @@ function writeHash(){
   if (state.tags.size) parts.push('tags=' + encodeURIComponent(Array.from(state.tags).join(',')));
   if (state.media) parts.push('media=1');
   if (state.sort !== 'newest') parts.push('sort=' + encodeURIComponent(state.sort));
+  if (state.post) parts.push('post=' + encodeURIComponent(state.post));
   try { history.replaceState(null, '', parts.length ? '#' + parts.join('&') : location.pathname); } catch (e) {}
 }
 function el(tag, cls, text){ var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
@@ -278,6 +285,7 @@ function mediaRow(item){
 }
 function card(item){
   var c = el('article', 'card');
+  c.dataset.id = item.id;
   var head = el('div', 'head');
   var av = el('div', 'av', (item.author && item.author.username ? item.author.username.slice(0, 2) : '?'));
   var who = el('div', 'who');
@@ -326,10 +334,14 @@ function card(item){
     b.onclick = function(){ state.tags.add(t); render(); };
     foot.appendChild(b);
   });
-  var open = el('a', 'sp', 'open on x');
+  var open = el('a', null, 'open on x');
   open.href = item.url || ('https://x.com/i/status/' + item.id);
   open.target = '_blank'; open.rel = 'noopener';
   foot.appendChild(open);
+  var local = el('a', 'local', 'local link');
+  local.href = item.localUrl || ('#post=' + item.id);
+  local.title = item.localUrl || '';
+  foot.appendChild(local);
   c.appendChild(foot);
   return c;
 }
@@ -348,13 +360,29 @@ function render(){
   document.getElementById('search').value = state.q;
   document.getElementById('media').className = 'toggle' + (state.media ? ' on' : '');
   document.getElementById('sort').value = state.sort;
+  if (state.post) {
+    var target = list.querySelector('.card[data-id="' + state.post + '"]');
+    if (target) {
+      target.classList.add('flash');
+      var jump = function(){
+        var y = target.getBoundingClientRect().top + window.scrollY - 160;
+        window.scrollTo(0, Math.max(0, y));
+      };
+      jump();
+      setTimeout(jump, 300);
+      setTimeout(jump, 900);
+      setTimeout(jump, 2200);
+    } else {
+      document.getElementById('where').textContent = label + '  (post ' + state.post + ' not in this view)';
+    }
+  }
   writeHash();
 }
 document.getElementById('search').addEventListener('input', function(e){ state.q = e.target.value.trim(); render(); });
 document.getElementById('sort').addEventListener('change', function(e){ state.sort = e.target.value; render(); });
 document.getElementById('media').addEventListener('click', function(){ state.media = !state.media; render(); });
 document.getElementById('clear').addEventListener('click', function(){
-  state.folder = null; state.tags.clear(); state.q = ''; state.media = false; state.sort = 'newest'; render();
+  state.folder = null; state.tags.clear(); state.q = ''; state.media = false; state.sort = 'newest'; state.post = null; render();
 });
 document.getElementById('lb').addEventListener('click', function(e){ if (e.target === this) closeLightbox(); });
 document.addEventListener('keydown', function(e){
@@ -419,8 +447,8 @@ function pageHtml(data) {
 
 export function viewBookmarks({ out = null } = {}) {
   const store = loadStore();
-  const data = buildData(store);
   const target = out ?? path.join(paths.dataDir, 'view.html');
+  const data = buildData(store, target);
   mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, pageHtml(data), 'utf8');
   return { path: target, items: data.items.length, folders: data.folders.length, tags: data.tags.length };
