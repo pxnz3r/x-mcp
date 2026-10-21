@@ -67,6 +67,7 @@ function printItem(item, index, folders = {}) {
   console.log(`${index + 1}. @${item.author?.username ?? '?'} - ${stamp(item)}${types}${folderLabel}`);
   console.log(`   ${flatten(item.text)}`);
   console.log(`   ${item.url ?? item.id}`);
+  if (item.localUrl) console.log(`   local: ${item.localUrl}`);
 }
 
 function printItems(items, folders = {}) {

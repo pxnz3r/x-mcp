@@ -29,6 +29,7 @@ import {
   upsertItems,
 } from './store.js';
 import { enrichLinkPreviews } from './linkpreview.js';
+import { localUrlFor } from './localurl.js';
 import { getClient } from './x.js';
 
 const MAX_PAGE = 100;
@@ -36,6 +37,11 @@ const PAGE_DELAY_MS = 400;
 const FOLDER_TTL_MS = 10 * 60 * 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function withLocalUrl(item) {
+  if (!item?.id) return item;
+  return { ...item, localUrl: localUrlFor(item.id) };
+}
 
 export async function whoami() {
   const user = await getClient().getViewer();
@@ -159,7 +165,7 @@ export async function listBookmarks({ limit = 20, cursor = null, folder = null }
         folder: { id: target.id, name: target.name, kind: 'local', path: folderPath(store, target.id) },
         count: pageItems.length,
         nextCursor: nextOffset < items.length ? String(nextOffset) : null,
-        items: pageItems,
+        items: pageItems.map(withLocalUrl),
       };
     }
 
@@ -178,7 +184,7 @@ export async function listBookmarks({ limit = 20, cursor = null, folder = null }
     folder: target ? { id: target.id, name: target.name, kind: target.kind ?? 'x' } : null,
     count: items.length,
     nextCursor: page.nextCursor,
-    items,
+    items: items.map(withLocalUrl),
   };
 }
 
@@ -245,21 +251,21 @@ export function searchBookmarks({ query, author, since, until, media, folder, ta
     totalCached: cached,
     cachedAt: store.updatedAt,
     hint: cached === 0 ? 'The local cache is empty. Run bookmarks_sync (CLI: node src/cli.js sync) first.' : undefined,
-    items,
+    items: items.map(withLocalUrl),
   };
 }
 
 export async function getBookmark(id) {
   const key = String(id);
   const store = loadStore();
-  if (store.items[key]) return store.items[key];
+  if (store.items[key]) return withLocalUrl(store.items[key]);
 
   const item = await getClient().getTweet(key);
   if (!item) throw new XAccessError(`Post ${key} was not found or is not accessible.`);
 
   upsertItems(store, [item]);
   saveStore(store);
-  return item;
+  return withLocalUrl(item);
 }
 
 async function refreshFolders(store) {
