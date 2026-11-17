@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const IGNORED_DIRS = new Set(['node_modules', '.git', 'data', '.vscode', '.idea', 'coverage']);
 const IGNORED_FILES = new Set(['.env', 'auth.json', 'credentials.json', 'package-lock.json']);
 const TEXT_EXTENSIONS = new Set([
-  '.js', '.mjs', '.cjs', '.json', '.md', '.txt', '.yml', '.yaml', '.toml', '.example', '.gitignore', '.env', '',
+  '.js', '.mjs', '.cjs', '.json', '.md', '.css', '.html', '.txt', '.yml', '.yaml', '.toml', '.example', '.gitignore', '.env', '',
 ]);
 const MAX_BYTES = 2 * 1024 * 1024;
 
