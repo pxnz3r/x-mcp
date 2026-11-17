@@ -1,7 +1,7 @@
 import { bearerToken, requireAuth, userAgent } from './config.js';
 import { AUTH_HINT, XAccessError } from './errors.js';
 import { BASE_FEATURES, bookmarkFeatures, bookmarkFolderFeatures, compactFeatures, tweetFeatures } from './features.js';
-import { normalizeTweet, parseFolderList, parseTimeline } from './normalize.js';
+import { buildConversation, normalizeTweet, parseFolderList, parseTimeline } from './normalize.js';
 import { getQueryId, invalidateQueryId, candidatesFor, rememberQueryId } from './queryids.js';
 import { backoff, noteRateLimit, schedule } from './safety.js';
 import { transactionId } from './tid.js';
@@ -103,6 +103,10 @@ export class XClient {
         });
       }
       const text = await res.text();
+
+      // stop before X has to say no: when this endpoint's window is nearly spent, pause until it resets
+      const remaining = res.headers.get('x-rate-limit-remaining');
+      if (res.ok && remaining && /^\d+$/.test(remaining) && Number(remaining) <= 2) noteRateLimit(retryAfterSeconds(res));
 
       if (res.status === 429) {
         const until = noteRateLimit(retryAfterSeconds(res));
@@ -214,6 +218,25 @@ export class XClient {
     });
     const result = payload.data?.tweetResult?.result;
     return result ? normalizeTweet(result) : null;
+  }
+
+  /** The conversation around a post (parents, the author's thread, replies), with article bodies included. */
+  async getConversation(id) {
+    const variables = {
+      focalTweetId: String(id),
+      with_rux_injections: false,
+      rankingMode: 'Relevance',
+      includePromotedContent: false,
+      withCommunity: true,
+      withQuickPromoteEligibilityTweetFields: false,
+      withBirdwatchNotes: false,
+      withVoice: false,
+    };
+    const fieldToggles = { withArticleRichContentState: true, withArticlePlainText: false, withGrokAnalyze: false, withDisallowedReplyControls: false };
+    const payload = await this.request('TweetDetail', { variables, features: tweetFeatures(), fieldToggles });
+    const data = assertNoErrors(payload, 'TweetDetail');
+    const { items } = parseTimeline(data);
+    return { items, conversation: buildConversation(items, String(id)) };
   }
 
   async addToFolder(tweetId, folderId) {

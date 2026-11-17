@@ -36,6 +36,9 @@ export function upsertItems(store, items) {
       store.items[item.id] = {
         ...previous,
         ...item,
+        // a bookmark page carries only the article preview; keep the full text an expand already fetched
+        article: item.article?.markdown || !previous.article?.markdown ? (item.article ?? previous.article ?? null) : previous.article,
+        expanded: item.expanded ?? previous.expanded,
         folderIds: item.folderIds ?? previous.folderIds ?? [],
         tags: item.tags ?? previous.tags ?? [],
         firstSeenAt: previous.firstSeenAt ?? now,
@@ -288,12 +291,18 @@ export function allItems(store) {
 }
 
 function haystack(item) {
+  const convo = item.expanded?.conversation;
+  const posts = convo ? [...convo.above, ...convo.thread, ...convo.authorReplies] : [];
+  const article = item.article ?? item.quoted?.article;
   return [
     item.text,
     item.author?.name,
     item.author?.username,
     item.quoted?.text,
     item.quoted?.author?.username,
+    article?.title,
+    article?.markdown ?? article?.preview,
+    ...posts.flatMap((post) => [post.text, ...(post.links ?? []).map((link) => link.url)]),
     ...(item.hashtags ?? []),
     ...(item.tags ?? []),
     ...(item.links ?? []).map((link) => link.url),

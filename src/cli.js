@@ -8,6 +8,7 @@ import {
   doctor,
   downloadMedia,
   enrichLinks,
+  expandBookmarks,
   exportBookmarks,
   foldersList,
   getBookmark,
@@ -20,6 +21,7 @@ import {
   whoami,
 } from './actions.js';
 import { XAccessError } from './errors.js';
+import { toMarkdown } from './normalize.js';
 import { describeSafety } from './safety.js';
 import { openViewer, viewBookmarks } from './viewer.js';
 
@@ -29,7 +31,8 @@ Usage:
   node src/cli.js whoami
   node src/cli.js doctor
   node src/cli.js list [--folder NAME] [--limit 20] [--cursor CURSOR] [--json]
-  node src/cli.js sync [--pages 50] [--full] [--json]
+  node src/cli.js sync [--pages 50] [--full] [--no-expand] [--json]
+  node src/cli.js expand [--limit 50] [--id POST] [--refresh] [--wait] [--json]
   node src/cli.js search <keywords> [--author NAME] [--folder PATH] [--tag TAG] [--since 2025-01-01]
                           [--until 2025-12-31] [--type photo|video|gif|any] [--limit 50] [--json]
   node src/cli.js get <post id> [--json]
@@ -99,6 +102,9 @@ async function main() {
       full: { type: 'boolean' },
       refresh: { type: 'boolean' },
       sync: { type: 'boolean' },
+      id: { type: 'string' },
+      wait: { type: 'boolean' },
+      'no-expand': { type: 'boolean' },
       yes: { type: 'boolean' },
       'dry-run': { type: 'boolean' },
       remove: { type: 'boolean' },
@@ -172,6 +178,11 @@ async function main() {
         console.log('X rate limited a page. Everything fetched so far is saved; wait for the cooldown, then rerun sync.');
       }
       if (result.stoppedReason === 'auth') console.log('Stopped on an auth error. Refresh the cookies, then rerun sync.');
+      if (result.addedIds.length && values['no-expand'] !== true && !result.stoppedReason) {
+        const expanded = await expandBookmarks({ ids: result.addedIds, limit: result.addedIds.length });
+        console.log(`Expanded ${expanded.fetched} new bookmark(s) with their threads, replies and articles` +
+          (expanded.stoppedReason ? `; stopped: ${expanded.stoppedReason}, rerun expand later.` : '.'));
+      }
       return;
     }
 
@@ -196,13 +207,26 @@ async function main() {
       if (!rest[0]) throw new XAccessError('Missing post id.', { hint: 'node src/cli.js get <post id>' });
       const item = await getBookmark(rest[0]);
       if (json) return console.log(JSON.stringify(item, null, 2));
-      console.log(`@${item.author.username} (${item.author.name}) - ${stamp(item)}`);
-      console.log(item.url);
-      console.log('');
-      console.log(item.text);
-      for (const link of item.links) console.log(`\nlink: ${link.url}`);
-      for (const [i, media] of (item.media ?? []).entries()) console.log(`\nmedia ${i} (${media.type}): ${media.url}`);
-      if (item.quoted) console.log(`\nquoted @${item.quoted.author.username}: ${flatten(item.quoted.text, 400)}`);
+      console.log(toMarkdown(item));
+      if (!item.expanded) console.log('Thread, replies and article text not fetched yet: node src/cli.js expand --id ' + item.id);
+      return;
+    }
+
+    case 'expand': {
+      const ids = values.id ? [values.id] : null;
+      const result = await expandBookmarks({
+        ids,
+        limit: limit ?? (ids ? 1 : 50),
+        refresh: values.refresh === true || Boolean(ids),
+        wait: values.wait === true,
+        onProgress: json ? null : ({ done, total, waitingMs }) => {
+          if (waitingMs) console.log(`  rate limited at ${done}/${total}; waiting ${Math.ceil(waitingMs / 60000)} min, then continuing`);
+          else if (done % 25 === 0 || done === total) console.log(`  ${done}/${total}`);
+        },
+      });
+      if (json) return console.log(JSON.stringify(result, null, 2));
+      console.log(`Expanded ${result.fetched}, skipped ${result.skipped} (nothing beyond the post), failed ${result.failed}. ${result.remaining} bookmarks not expanded yet.`);
+      if (result.stoppedReason) console.log(`Stopped: ${result.stoppedReason}. Rerun expand (add --wait to sit out cooldowns).`);
       return;
     }
 

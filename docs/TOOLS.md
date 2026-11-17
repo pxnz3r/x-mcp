@@ -60,8 +60,19 @@ Returns `{ account, folder, count, nextCursor, items[] }`.
 | --- | --- | --- | --- |
 | `maxPages` | int 1-500 | 50 | 20 posts per page |
 | `incremental` | bool | true | Stop at the first page that adds nothing |
+| `expandNew` | bool | true | Run `bookmarks_expand` on the posts this sync added |
 
-Returns `{ pages, added, refreshed, incremental, total, syncedAt, stoppedEarly }`.
+Returns `{ pages, added, addedIds, refreshed, incremental, total, syncedAt, stoppedEarly, expanded? }`.
+
+### `bookmarks_expand`
+
+| Arg | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `ids` | string[] | none | Expand these posts, refetching them; omit to work through unexpanded bookmarks, newest first |
+| `limit` | int 1-200 | 40 | Most posts per call |
+| `refresh` | bool | false | Refetch posts already expanded |
+
+One `TweetDetail` read per post. Posts with no replies, no parent, and no article are marked skipped without a request. Stores `article` (`title`, `cover`, `markdown`) and `expanded.conversation` (`above`, `thread`, `authorReplies`, `replies`). Returns `{ fetched, skipped, failed, remaining, stoppedReason }`; on a rate limit it stops and `stoppedReason` says when to resume.
 
 ### `bookmarks_search`
 
@@ -79,7 +90,7 @@ Returns `{ count, totalCached, cachedAt, items[], hint? }`. Cache only.
 
 ### `bookmark_get`
 
-`id` (numeric string). Returns one cached item, or fetches it from X and caches it.
+`id` (numeric string). Returns one cached item, or fetches it from X and caches it. Expands it first when it has not been expanded, so the result includes `expanded.conversation` and `article.markdown`. Search results carry a short `more` summary instead of these bodies.
 
 ### `folders_list`
 

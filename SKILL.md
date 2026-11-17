@@ -21,6 +21,7 @@ Personal bookmark tool. Reads the user's own bookmarks through their logged-in x
 | Who is logged in | `x_whoami` |
 | Fresh page from X | `bookmarks_list` |
 | Fill the cache | `bookmarks_sync` |
+| Threads, replies, article text | `bookmarks_expand` |
 | Find saved posts | `bookmarks_search` |
 | One post in full | `bookmark_get` |
 | Folder tree and tags | `folders_list` |
@@ -41,7 +42,7 @@ Personal bookmark tool. Reads the user's own bookmarks through their logged-in x
 
 1. `bookmarks_sync` (incremental is fine) so the cache is fresh.
 2. `bookmarks_search` with `folder`, `tag`, `query`, `author`, or date filters.
-3. Read hits with `bookmark_get`, or summarize from the returned item text.
+3. Read hits with `bookmark_get`. The bookmarked post is often only the hook: read `article.markdown`, `expanded.conversation.thread`, and `expanded.conversation.authorReplies` (where repo and demo links usually are) before summarizing. Search results only carry a `more` summary of these.
 4. Organize with `folder_assign` and `tags_assign` using ids you actually read.
 5. Finish with `bookmarks_export` if the user wants a file, or tell them to run `node src/cli.js view` for the browser view. Run `node src/cli.js links` first if they want OG link cards.
 
@@ -63,6 +64,7 @@ Only with `scope: "x"`, and only when the user explicitly asks for real X folder
 - On `429`, every tool is paused until the cooldown expires. Do not retry around it.
 - 30 writes per hour by default, 25 per call. Do not raise the budget without being asked.
 - Reads are cheap. Prefer cache search over repeated `bookmarks_list` calls.
+- `bookmarks_expand` costs one read per post. Backfill in calls of 40 or so; when it stops on a rate limit, report `stoppedReason` instead of retrying.
 
 ## Error playbook
 

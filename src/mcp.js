@@ -9,6 +9,7 @@ import {
   deleteLocalFolder,
   doctor,
   downloadMedia,
+  expandBookmarks,
   exportBookmarks,
   foldersList,
   getBookmark,
@@ -100,9 +101,31 @@ server.registerTool(
     inputSchema: {
       maxPages: z.number().int().min(1).max(500).default(50).describe('Stop after this many pages (20 posts per page)'),
       incremental: z.boolean().default(true).describe('Stop once a page adds nothing new'),
+      expandNew: z.boolean().default(true).describe('Also fetch threads, replies and articles for newly added bookmarks'),
     },
   },
-  tool(async ({ maxPages, incremental }) => syncBookmarks({ maxPages, incremental })),
+  tool(async ({ maxPages, incremental, expandNew }) => {
+    const result = await syncBookmarks({ maxPages, incremental });
+    if (expandNew && result.addedIds.length && !result.stoppedReason) {
+      result.expanded = await expandBookmarks({ ids: result.addedIds, limit: result.addedIds.length });
+    }
+    return result;
+  }),
+);
+
+server.registerTool(
+  'bookmarks_expand',
+  {
+    title: 'Fetch threads, replies and articles',
+    description:
+      'For cached bookmarks, fetch the conversation around each post: the author\'s thread continuation, the author\'s answers in the replies (where links and repos often are), top replies, the posts a bookmarked reply answers, and the full text of X articles. One X request per bookmark through the safe queue; resumable, already expanded posts are skipped. Stops on a rate limit and reports when to resume.',
+    inputSchema: {
+      ids: z.array(idSchema).optional().describe('Expand these posts (refetches them); omit to work through unexpanded bookmarks, newest first'),
+      limit: z.number().int().min(1).max(200).default(40).describe('Most posts to expand in this call'),
+      refresh: z.boolean().default(false).describe('Refetch posts that were already expanded'),
+    },
+  },
+  tool(async ({ ids, limit, refresh }) => expandBookmarks({ ids: ids ?? null, limit, refresh: refresh || Boolean(ids?.length) })),
 );
 
 server.registerTool(
@@ -135,10 +158,15 @@ server.registerTool(
   {
     title: 'Get one bookmark',
     description:
-      'Return the full stored contents of one post: text, author, metrics, media URLs, links, quoted post, and folder ids. Falls back to fetching it from X when it is not cached.',
+      'Return the full stored contents of one post: text, author, metrics, media URLs, links, quoted post, folder ids, and expanded.conversation (thread, author replies, top replies, parents) plus article.markdown for X articles. Fetches the conversation from X when it has not been expanded yet.',
     inputSchema: { id: idSchema },
   },
-  tool(async ({ id }) => getBookmark(id)),
+  tool(async ({ id }) => {
+    const item = await getBookmark(id);
+    if (item.expanded) return item;
+    await expandBookmarks({ ids: [String(id)], limit: 1, refresh: true });
+    return getBookmark(id);
+  }),
 );
 
 server.registerTool(

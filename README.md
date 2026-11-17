@@ -2,8 +2,9 @@
 
 Read, search, organize, and export your own X (Twitter) bookmarks from an AI agent or the terminal, using the session you already have in your browser. No paid API, no browser automation.
 
-- MCP server with 16 tools, plus a full CLI
+- MCP server with 17 tools, plus a full CLI
 - Local cache so search, folders, tags, export, and the viewer work offline
+- Captures what a bookmark points at: the full text of X articles, the author's thread, the author's answers in the replies (where the repo link usually is), and the posts a bookmarked reply answers
 - Nested local folders and cross-cutting tags, free and instant
 - Optional real X folder writes for Premium accounts, gated behind explicit confirmation
 - Media URLs and downloads through cobalt
@@ -81,9 +82,10 @@ Windows paths need escaped backslashes, for example `C:\\tools\\x-bookmarks-mcp\
 | `x_doctor` | Read-only checks: cookies, identity, bookmarks, folders, writes, cobalt |
 | `x_whoami` | Show the logged-in account |
 | `bookmarks_list` | One fresh page of bookmarks, optionally from a folder |
-| `bookmarks_sync` | Fill the local cache, incremental by default |
+| `bookmarks_sync` | Fill the local cache, incremental by default; expands new posts |
+| `bookmarks_expand` | Fetch threads, author replies, top replies, and article text |
 | `bookmarks_search` | Keyword, author, date, media, folder, and tag filters |
-| `bookmark_get` | One post in full |
+| `bookmark_get` | One post in full, with its conversation and article |
 | `folders_list` | Folder tree with totals and tags |
 | `folder_assign` | File into local folders, or an X folder with `scope: "x"` |
 | `folder_create` | Create a local or X folder |
@@ -97,15 +99,17 @@ Windows paths need escaped backslashes, for example `C:\\tools\\x-bookmarks-mcp\
 
 Full schemas: [docs/TOOLS.md](docs/TOOLS.md). Agent guidance: [SKILL.md](SKILL.md).
 
-Typical agent flow: `bookmarks_sync` → `bookmarks_search` → `bookmark_get` → `folder_assign` and `tags_assign` on ids it actually read.
+Typical agent flow: `bookmarks_sync` → `bookmarks_search` → `bookmark_get` (thread, author replies, article) → `folder_assign` and `tags_assign` on ids it actually read.
 
 ## CLI
 
 ```bash
 node src/cli.js doctor
 node src/cli.js whoami
-node src/cli.js sync                     # incremental
+node src/cli.js sync                     # incremental, expands new posts
 node src/cli.js sync --full --pages 20
+node src/cli.js expand --limit 200 --wait  # backfill threads, replies, articles
+node src/cli.js get 1759123456789012345  # one post as Markdown, with its thread
 node src/cli.js list --limit 20
 node src/cli.js list --folder "Design/Frontend"
 node src/cli.js search "rust async" --folder "Design/Frontend" --tag claude --type video
@@ -129,17 +133,32 @@ Every command accepts `--json`. Full reference: [docs/CLI.md](docs/CLI.md).
 
 `node src/cli.js view` writes `data/view.html` and opens it. One file, no server, no cookies, read-only.
 
-- Folder tree with totals that include subfolders
-- Tag chips, combine any number
-- Search across text, author, tags, links, and media alt text
+- Three panes: folders and tags, the feed, and a reading pane for the selected post. Below 1200 px the reading pane slides over the feed; on phones the folders become a drawer
+- Feed rows show what each bookmark leads to: an article card, thread length, how often the author replied, and the repo or demo links found in the thread and replies
+- The reading pane shows the posts being replied to, the post, the full article, the author's thread, the author's answers in the replies, and top replies
+- Folder tree with totals that include subfolders; tag chips, combine any number
+- Search across text, author, tags, links, article text, threads, and media alt text
 - Sort by newest, oldest, or author, plus a media-only toggle
-- Cards show text, media thumbnails, quoted post, link cards, folder path, tags, and a link to x.com
-- Click a photo or video to open it in place: no new tab, transparent backdrop, `Esc` or click outside closes
-- `/` focuses search, `Esc` clears it, Reset clears everything
+- Click a photo or video to open it in place: transparent backdrop, `Esc` or click outside closes
+- Keys: `/` search, `j` / `k` or arrows to move through the feed, `o` opens the post on x.com, `Esc` closes the pane or clears search
 - Filters persist in the URL hash (`#folder=Design/Frontend&tags=gsap`), so a link restores the same view
 - Every post has a local URL: `file:///.../data/view.html#post=<id>` opens the viewer scrolled to that post. The same URL is returned as `localUrl` by `list`, `search`, and `get`
 
 Regenerate after a sync or after changing folders and tags. The viewer is read-only and makes no requests of its own beyond image CDNs; link previews are fetched once by `links` and stored in the cache.
+
+## Threads, replies, and articles
+
+A bookmark is often only the first post: the article body, the rest of the thread, or the link the author dropped in the replies lives elsewhere. `expand` fetches the conversation around each bookmark (one `TweetDetail` read per post) and stores:
+
+| Field | What it holds |
+| --- | --- |
+| `article` | Title, cover, and the full article as Markdown (headings, lists, images, code, embedded posts) |
+| `expanded.conversation.above` | The posts a bookmarked reply answers, oldest first |
+| `expanded.conversation.thread` | The author's continuation of the post |
+| `expanded.conversation.authorReplies` | The author's substantial answers to commenters (links, media, or real text) |
+| `expanded.conversation.replies` | Top replies from other people, by likes |
+
+`sync` expands new bookmarks automatically (`--no-expand` skips it). For older ones run `expand`; it is resumable, skips posts already expanded, and skips posts with no replies and no article without a request. With `--wait` it waits out X's cooldowns and continues; without it, it stops and says when to resume. Search covers article text and the expanded posts.
 
 ## Folders and tags
 
@@ -165,6 +184,7 @@ Automation on a private endpoint is what can get an account flagged, so reads an
 - Every request goes through one serialized queue. No parallel bursts, even with concurrent tool calls.
 - Reads are spaced about 900 ms apart plus jitter. Writes are spaced 6 to 9 seconds apart.
 - A `429` sets a 15 minute cooldown (longer if X sends `Retry-After`), persisted to `data/rate.json`, blocking every tool including reads.
+- When X reports two or fewer requests left in an endpoint's window, the tool pauses until the window resets, before X has to answer `429`.
 - Reads retry on 5xx with exponential backoff, at most three attempts. Reads never auto-retry a `429`.
 - Writes are off unless `X_ALLOW_WRITES=true`.
 - Every write needs `confirm: true` (CLI `--yes`); otherwise you get a preview and nothing changes.
@@ -189,7 +209,7 @@ Self-host with `docker run -p 9000:9000 ghcr.io/imputnet/cobalt:10`, then `COBAL
 
 ## How it works
 
-- Reads use the private `Bookmarks`, `BookmarkFoldersSlice`, and `BookmarkFolderTimeline` GraphQL operations through your session.
+- Reads use the private `Bookmarks`, `BookmarkFoldersSlice`, and `BookmarkFolderTimeline` GraphQL operations through your session. Conversations and article bodies come from `TweetDetail` with `withArticleRichContentState`.
 - Identity uses `Viewer`. The legacy `1.1/account/verify_credentials` endpoint returns `404` now and is no longer used.
 - Writes use `bookmarkTweetToFolder` and `createBookmarkFolder`, with `x-client-transaction-id` generated by [x-client-transaction-id](https://github.com/Lqm1/x-client-transaction-id).
 - Query ids rotate with X's web builds. Resolution order: env override, 24 hour disk cache, community registry, a scan of the bundles served at `x.com/i/jf/`, then hardcoded fallbacks. A rejected or `404` id is refreshed and swapped automatically.
@@ -238,6 +258,8 @@ Cookies are a full session. `.env`, `auth.json`, and `data/` are gitignored, and
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+The article-to-Markdown conversion and the thread approach are ported from [x-md](https://github.com/pc-style/x-md) (MIT).
 
 ## Disclaimer
 

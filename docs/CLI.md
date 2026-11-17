@@ -11,9 +11,10 @@ Every command accepts `--json` for machine-readable output and `--help` / `-h`.
 | `doctor` | Read-only health checks |
 | `whoami` | Show the logged-in account |
 | `list` | One page of bookmarks, live from X or from a local folder |
-| `sync` | Page bookmarks into the local cache |
+| `sync` | Page bookmarks into the local cache, then expand new ones |
+| `expand` | Fetch threads, author replies, top replies, and article text |
 | `search` | Search the cache |
-| `get` | One post, from cache or X |
+| `get` | One post as Markdown, from cache or X |
 | `folders` | Folder tree with counts and tags |
 | `assign` | Add or remove folder membership |
 | `folder-create` | Create a folder (nested allowed) |
@@ -33,7 +34,8 @@ Every command accepts `--json` for machine-readable output and `--help` / `-h`.
 node src/cli.js doctor [--json]
 node src/cli.js whoami [--json]
 node src/cli.js list [--folder PATH] [--limit 20] [--cursor CURSOR] [--json]
-node src/cli.js sync [--pages 50] [--full] [--json]
+node src/cli.js sync [--pages 50] [--full] [--no-expand] [--json]
+node src/cli.js expand [--limit 50] [--id POST] [--refresh] [--wait] [--json]
 node src/cli.js search "terms" [--author NAME] [--folder PATH] [--tag TAG]
                             [--since 2025-01-01] [--until 2025-12-31]
                             [--type photo|video|gif|any] [--limit 50] [--json]
@@ -44,6 +46,9 @@ node src/cli.js tags [--json]
 
 - `list --folder` on a local folder reads the cache and includes subfolders. On an X folder it fetches live.
 - `sync --full` walks until it stops adding new posts; without it, sync stops at the first page with nothing new.
+- `sync` expands the posts it added unless `--no-expand` is passed.
+- `expand` works through unexpanded bookmarks newest first, one read per post, and saves every 10. `--wait` sleeps through X cooldowns and continues; without it the run stops and prints when to resume. `--id` expands one post, `--refresh` refetches.
+- `get` prints the post as Markdown with the replied-to posts, the article, the thread, the author's replies, and top replies.
 - `search` requires the cache. Run `sync` first.
 - Every listed post prints a `local:` line with a `file://` link into `data/view.html#post=<id>`, which opens the viewer at that post.
 

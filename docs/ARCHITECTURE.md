@@ -24,15 +24,15 @@ CLI (src/cli.js)          MCP server (src/mcp.js)
 | `src/features.js` | GraphQL feature flags per operation (`BASE_FEATURES`, `bookmarkFeatures`, `bookmarkFolderFeatures`, `tweetFeatures`, `compactFeatures`) |
 | `src/queryids.js` | Resolves and caches GraphQL query ids, then retries alternates when X rejects one |
 | `src/x.js` | `XClient`: headers, request loop, status handling, timeline/folder/tweet/viewer calls |
-| `src/normalize.js` | Turns raw GraphQL payloads into the stable item shape, parses folder lists, renders markdown |
+| `src/normalize.js` | Turns raw GraphQL payloads into the stable item shape, parses folder lists, converts article rich text to Markdown, builds conversations, renders markdown |
 | `src/store.js` | JSON store: items, folders (nested), tags, counts, search |
 | `src/safety.js` | Serialized queue, spacing, cooldown, write budget, write gate |
 | `src/tid.js` | Generates `x-client-transaction-id` for writes, with an env override and a failure cache |
-| `src/actions.js` | Use-case layer shared by CLI and MCP: sync, list, search, folders, tags, media, export, doctor |
+| `src/actions.js` | Use-case layer shared by CLI and MCP: sync, expand, list, search, folders, tags, media, export, doctor |
 | `src/cobalt.js` | cobalt client for video and GIF URLs, file download and filename sanitizing |
 | `src/linkpreview.js` | Fetches OG metadata for external links, caches it for 14 days |
 | `src/localurl.js` | Builds `file://` viewer URLs with a `#post=<id>` anchor |
-| `src/viewer.js` | Generates the standalone `data/view.html` viewer |
+| `src/viewer.js` | Generates the standalone `data/view.html` viewer from the store plus `src/viewer/page.css` and `src/viewer/page.js` |
 | `src/mcp.js` | Registers the MCP tools and maps errors to text results |
 | `src/cli.js` | Command-line interface |
 
@@ -88,6 +88,11 @@ Order in `getQueryId`:
       "media": [],
       "links": [],
       "quoted": null,
+      "article": { "id": "...", "url": "https://x.com/i/article/...", "title": "...", "preview": "...", "cover": "...", "markdown": "..." },
+      "expanded": {
+        "at": "...",
+        "conversation": { "above": [], "thread": [], "authorReplies": [], "replies": [] }
+      },
       "folderIds": ["local:design-frontend"],
       "tags": ["claude"],
       "firstSeenAt": "...",
@@ -111,6 +116,8 @@ Other files under `data/`:
 ## Flows
 
 **Sync**: paged `Bookmarks` reads, newest first, merged into `items`. Incremental mode stops at the first page that adds nothing. Local folder and tag membership survive merges because `upsertItems` keeps existing `folderIds` and `tags` when a fresh item omits them.
+
+**Expand**: one `TweetDetail` read per bookmark (fieldToggle `withArticleRichContentState` adds the article's Draft.js content). `buildConversation` splits the returned posts: `above` walks `replyToId` up from the focal post, `thread` is a breadth-first walk of the author's own replies, `authorReplies` are the author's remaining posts that carry a link, media, an article, or 100+ characters of text, and `replies` are other people's direct replies by likes, minus ones the author answered. `articleToMarkdown` is a port of x-md's converter (MIT). Posts with no replies, parent, or article are marked `skipped` with no request. Only the first page of the conversation is read. `upsertItems` keeps a stored article body and `expanded` when a later sync returns the post without them.
 
 **List**: live page from X for the main timeline or an X folder; cached read for local folders, where a parent selects its whole subtree. Local listing uses a numeric cursor (offset), X uses the GraphQL cursor.
 

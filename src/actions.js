@@ -5,7 +5,7 @@ import { getAuth, paths } from './config.js';
 import { cobaltCheck, cobaltResolve, downloadFile, exportFilenameHint, sanitizeFilename } from './cobalt.js';
 import { XAccessError } from './errors.js';
 import { toMarkdown } from './normalize.js';
-import { MAX_WRITES_PER_CALL, describeSafety, mutationBudget, requireWrites, spendMutation } from './safety.js';
+import { MAX_WRITES_PER_CALL, cooldownRemainingMs, describeSafety, mutationBudget, requireWrites, spendMutation } from './safety.js';
 import {
   addFolderMembership,
   addTags,
@@ -41,6 +41,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function withLocalUrl(item) {
   if (!item?.id) return item;
   return { ...item, localUrl: localUrlFor(item.id) };
+}
+
+/** List and search results: drop the bulky conversation and article body, say what bookmark_get would add. */
+function brief(item) {
+  const { expanded, article, ...rest } = withLocalUrl(item);
+  const convo = expanded?.conversation;
+  return {
+    ...rest,
+    article: article ? { title: article.title, url: article.url, preview: article.preview } : null,
+    more: expanded
+      ? { thread: convo?.thread.length ?? 0, authorReplies: convo?.authorReplies.length ?? 0, replies: convo?.replies.length ?? 0, articleText: Boolean(article?.markdown) }
+      : 'not expanded',
+  };
 }
 
 export async function whoami() {
@@ -197,6 +210,7 @@ export async function syncBookmarks({ maxPages = 50, pageSize = 20, incremental 
   let added = 0;
   let refreshed = 0;
   let stoppedReason = null;
+  const addedIds = [];
 
   while (pages < maxPages) {
     let page;
@@ -214,6 +228,7 @@ export async function syncBookmarks({ maxPages = 50, pageSize = 20, incremental 
       throw error;
     }
 
+    for (const item of page.items) if (!store.items[item.id]) addedIds.push(item.id);
     const delta = upsertItems(store, page.items);
     added += delta.added;
     refreshed += delta.refreshed;
@@ -239,7 +254,77 @@ export async function syncBookmarks({ maxPages = 50, pageSize = 20, incremental 
     syncedAt: store.updatedAt,
     stoppedEarly: pages >= maxPages,
     stoppedReason,
+    addedIds,
   };
+}
+
+/** Does this bookmark have more to it than the post itself? */
+function needsConversation(item) {
+  return item.metrics?.replies > 0 || item.isReply || Boolean(item.article || item.quoted?.article);
+}
+
+/**
+ * Fetch the conversation around bookmarks (TweetDetail): the author's thread, the author's answers in the
+ * replies, top replies, the posts a bookmarked reply answers, and full article text.
+ * One request per bookmark through the shared safe queue. Resumable: already expanded posts are skipped
+ * unless refresh is set. With wait=true a 429 cooldown is waited out and the run continues; otherwise it stops.
+ */
+export async function expandBookmarks({ ids = null, limit = 50, refresh = false, wait = false, onProgress = null } = {}) {
+  const client = getClient();
+  const store = loadStore();
+  const pool = ids?.length
+    ? ids.map(String).filter((id) => store.items[id])
+    : Object.values(store.items)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .map((item) => item.id);
+  const todo = pool.filter((id) => refresh || !store.items[id].expanded).slice(0, limit);
+  let fetched = 0;
+  let skipped = 0;
+  let failed = 0;
+  let stoppedReason = null;
+
+  for (let i = 0; i < todo.length; i += 1) {
+    const item = store.items[todo[i]];
+    if (!needsConversation(item)) {
+      item.expanded = { at: new Date().toISOString(), conversation: null, skipped: 'no replies, thread or article' };
+      skipped += 1;
+      continue;
+    }
+    try {
+      const { items, conversation } = await client.getConversation(item.id);
+      const fresh = items.find((t) => t.id === item.id);
+      if (fresh) upsertItems(store, [fresh]);
+      store.items[item.id].expanded = { at: new Date().toISOString(), conversation };
+      fetched += 1;
+    } catch (error) {
+      // a 429 now, or a cooldown left by an earlier run (the queue refuses to send during it)
+      if (error?.status === 429 || cooldownRemainingMs() > 0) {
+        const pause = cooldownRemainingMs();
+        if (!wait) {
+          stoppedReason = `rate-limited: resumes in ${Math.ceil(pause / 60000)} min`;
+          break;
+        }
+        onProgress?.({ done: i, total: todo.length, waitingMs: pause });
+        saveStore(store);
+        await sleep(pause + 5000);
+        i -= 1;
+        continue;
+      }
+      if (error?.status === 401 || error?.status === 403 || error?.code === 'AUTH_FAILED') {
+        stoppedReason = 'auth';
+        break;
+      }
+      // deleted, protected or unparseable post: record it so later runs don't retry forever
+      item.expanded = { at: new Date().toISOString(), conversation: null, error: String(error?.message ?? error).slice(0, 200) };
+      failed += 1;
+    }
+    if (fetched % 10 === 0) saveStore(store);
+    onProgress?.({ done: i + 1, total: todo.length });
+  }
+  saveStore(store);
+
+  const remaining = Object.values(store.items).filter((item) => !item.expanded).length;
+  return { fetched, skipped, failed, remaining, stoppedReason };
 }
 
 export function searchBookmarks({ query, author, since, until, media, folder, tag, limit = 50 } = {}) {
@@ -251,7 +336,7 @@ export function searchBookmarks({ query, author, since, until, media, folder, ta
     totalCached: cached,
     cachedAt: store.updatedAt,
     hint: cached === 0 ? 'The local cache is empty. Run bookmarks_sync (CLI: node src/cli.js sync) first.' : undefined,
-    items: items.map(withLocalUrl),
+    items: items.map(brief),
   };
 }
 
